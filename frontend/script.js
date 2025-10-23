@@ -1,4 +1,11 @@
-const apiBase = "http://127.0.0.1:5000";
+const apiBase = "http://192.168.56.10:5000";
+
+fetch("http://192.168.56.10:5000/resources")
+  .then((res) => res.json())
+  .then((data) => {
+    document.getElementById("cpu").max = data.cpu_available;
+    document.getElementById("memory").max = data.memory_available;
+  });
 
 document.getElementById("cpu").oninput = (e) => {
   document.getElementById("cpu-val").textContent = e.target.value;

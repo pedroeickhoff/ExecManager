@@ -3,17 +3,37 @@ from executor import run_command
 import os
 import signal
 import shutil
+import psutil
 
 class EnvironmentManager:
     def __init__(self):
         self.environments = {}
 
+    def get_available_resources(self):
+        cpu_count = psutil.cpu_count(logical=False)
+        mem = psutil.virtual_memory()
+        available_memory_mb = int(mem.available / (1024 * 1024))
+        return {
+            'cpu_available': cpu_count,
+            'memory_available': available_memory_mb
+        }
+
     def create_environment(self, data):
+        resources = self.get_available_resources()
+        requested_cpu = float(data.get('cpu', 1))
+        requested_memory = int(data.get('memory', 128))
+
+        if requested_cpu > resources['cpu_available']:
+            return {'error': f'CPU solicitada ({requested_cpu}) excede o disponível ({resources["cpu_available"]})'}
+
+        if requested_memory > resources['memory_available']:
+            return {'error': f'Memória solicitada ({requested_memory}MB) excede o disponível ({resources["memory_available"]}MB)'}
+
         env = Environment(
             namespace=data['namespace'],
-            cpu=data.get('cpu', 1),
-            memory=data.get('memory', 128),
-            io=data.get('io', 1),
+            cpu=requested_cpu,
+            memory=requested_memory,
+            io=int(data.get('io', 1)),
             command=data.get('command', '')
         )
         self.environments[env.namespace] = env
@@ -26,7 +46,7 @@ class EnvironmentManager:
             return {'error': 'Namespace não encontrado'}
 
         env.status = 'running'
-        process, path = run_command(ns, env.command)
+        process, path = run_command(ns, env.command, env.cpu, env.memory)
         env.process = process
         return {'message': 'Execução iniciada', 'output_path': path}
 
@@ -58,18 +78,21 @@ class EnvironmentManager:
         if not env:
             return {'error': 'Namespace não encontrado'}
 
-        # Finaliza o processo se estiver rodando
-        if env.process and env.process.poll() is None:
-            os.kill(env.process.pid, signal.SIGTERM)
-            env.status = 'terminated'
+        try:
+            if env.process and env.process.poll() is None:
+                os.kill(env.process.pid, signal.SIGTERM)
+                env.status = 'terminated'
+        except Exception as e:
+            return {'error': f'Erro ao encerrar processo: {str(e)}'}
 
-        # Remove da memória
-        del self.environments[namespace]
+        self.environments.pop(namespace, None)
 
-        # Remove a pasta física
         env_path = os.path.join("environments", namespace)
-        if os.path.exists(env_path):
-            shutil.rmtree(env_path)
+        try:
+            if os.path.exists(env_path):
+                shutil.rmtree(env_path)
+        except Exception as e:
+            return {'error': f'Erro ao remover pasta: {str(e)}'}
 
         return {'message': f'Ambiente {namespace} encerrado e removido'}
 
