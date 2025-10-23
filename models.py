@@ -6,4 +6,6 @@ class Environment:
         self.io = int(io)
         self.command = command
         self.status = 'created'
-        self.process = None
+        self.process = None  # não vamos depender dele para matar
+        self.unit_name = None
+        self.main_pid = None
