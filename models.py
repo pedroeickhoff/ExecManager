@@ -6,6 +6,6 @@ class Environment:
         self.io = int(io)
         self.command = command
         self.status = 'created'
-        self.process = None  # não vamos depender dele para matar
-        self.unit_name = None
-        self.main_pid = None
+        self.process = None     # mantido por compatibilidade, não usamos com systemd
+        self.unit_name = None   # ex: env-<namespace>.service
+        self.main_pid = None    # PID principal quando .service

@@ -2,125 +2,301 @@
 <html lang="pt-br">
   <head>
     <meta charset="UTF-8" />
-    <title>Gerenciador de Ambientes</title>
+    <title>Exec Environments • Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- SF Pro (fallbacks) -->
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <style>
+      @font-face {
+        font-family: "SF Pro Display";
+        font-style: normal;
+        font-weight: 400;
+        src: local("SF Pro Display"), local("San Francisco");
+      }
+    </style>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div class="container">
-      <h1>⚙️ Gerenciador de Ambientes</h1>
+    <!-- App Window (macOS chrome) -->
+    <div class="mac-window">
+      <div class="mac-titlebar">
+        <div class="mac-traffic">
+          <span class="dot dot-close" aria-label="close"></span>
+          <span class="dot dot-min" aria-label="minimize"></span>
+          <span class="dot dot-max" aria-label="maximize"></span>
+        </div>
+        <div class="title">
+          <strong>Exec Environments</strong> — Gerenciador de Ambientes
+        </div>
+        <div class="status-pill" id="api-health">
+          <span class="pulse"></span> verificando API…
+        </div>
+      </div>
 
-      <section>
-        <h2>Criar Ambiente</h2>
-        <form id="create-form">
-          <input
-            type="text"
-            name="namespace"
-            placeholder="Namespace"
-            required
-          />
+      <div class="app-shell">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+          <div class="panel">
+            <h3 class="panel-title">Recursos disponíveis</h3>
+            <div id="resources" class="kv">
+              <div class="kv-row"><span>CPU:</span><b id="cpu-free">—</b></div>
+              <div class="kv-row">
+                <span>Memória:</span><b id="mem-free">—</b>
+              </div>
+            </div>
+          </div>
 
-          <label for="command">Código a executar:</label>
-          <textarea
-            name="command"
-            id="command"
-            rows="8"
-            placeholder="Digite seu script ou comando aqui..."
-            required
-          ></textarea>
+          <div class="panel">
+            <h3 class="panel-title">Monitorar namespace</h3>
+            <form id="watch-form" class="vstack gap-8">
+              <input
+                type="text"
+                id="watch-ns"
+                placeholder="ex: meu-job"
+                autocomplete="off"
+              />
+              <button type="submit" class="btn btn-secondary w-100">
+                Iniciar monitoramento
+              </button>
+              <button type="button" id="stop-watch" class="btn btn-ghost w-100">
+                Parar monitoramento
+              </button>
+              <div class="microtext">
+                Consulta o <code>/status/&lt;ns&gt;</code> a cada 2s.
+              </div>
+            </form>
+          </div>
 
-          <label for="cpu">CPU (núcleos): <span id="cpu-val">1.0</span></label>
-          <input
-            type="range"
-            name="cpu"
-            id="cpu"
-            min="0.1"
-            max="8"
-            step="0.1"
-            value="1.0"
-          />
+          <div class="panel">
+            <h3 class="panel-title">Ações rápidas</h3>
+            <div class="quick-actions">
+              <button id="load-demo" class="btn btn-ghost">
+                Carregar script demo
+              </button>
+              <button id="clear-output" class="btn btn-ghost">
+                Limpar output
+              </button>
+            </div>
+          </div>
+        </aside>
 
-          <label for="memory"
-            >Memória (MB): <span id="memory-val">512</span></label
-          >
-          <input
-            type="range"
-            name="memory"
-            id="memory"
-            min="64"
-            max="16384"
-            step="64"
-            value="512"
-          />
+        <!-- Main content -->
+        <main class="main">
+          <section class="grid">
+            <!-- Criar Ambiente -->
+            <div class="card">
+              <div class="card-header">
+                <h2>🧩 Criar Ambiente</h2>
+              </div>
+              <form id="create-form" class="card-body vstack gap-12">
+                <div class="field-row">
+                  <label>Namespace</label>
+                  <input
+                    type="text"
+                    name="namespace"
+                    placeholder="ex: build-123"
+                    required
+                  />
+                </div>
 
-          <label for="io">IO (prioridade): <span id="io-val">5</span></label>
-          <input
-            type="range"
-            name="io"
-            id="io"
-            min="1"
-            max="10"
-            step="1"
-            value="5"
-          />
+                <div class="field-row">
+                  <label>Código / comando</label>
+                  <textarea
+                    name="command"
+                    id="command"
+                    rows="7"
+                    placeholder="Digite o comando ou script (ex: python3 -c 'print(42)')"
+                    required
+                  ></textarea>
+                </div>
 
-          <button type="submit">🚀 Criar Ambiente</button>
-        </form>
-      </section>
+                <div class="grid grid-2">
+                  <div class="field-row">
+                    <label>
+                      CPU (núcleos)
+                      <span class="hint" id="cpu-val">1.0</span>
+                    </label>
+                    <input
+                      type="range"
+                      name="cpu"
+                      id="cpu"
+                      min="0.1"
+                      max="8"
+                      step="0.1"
+                      value="1.0"
+                    />
+                  </div>
+                  <div class="field-row">
+                    <label>
+                      Memória (MB)
+                      <span class="hint" id="memory-val">512</span>
+                    </label>
+                    <input
+                      type="range"
+                      name="memory"
+                      id="memory"
+                      min="64"
+                      max="16384"
+                      step="64"
+                      value="512"
+                    />
+                  </div>
+                </div>
 
-      <section>
-        <h2>Executar Programa</h2>
-        <form id="execute-form">
-          <input
-            type="text"
-            name="namespace"
-            placeholder="Namespace"
-            required
-          />
-          <button type="submit">▶️ Executar</button>
-        </form>
-      </section>
+                <div class="field-row">
+                  <label>
+                    IO (prioridade)
+                    <span class="hint" id="io-val">5</span>
+                  </label>
+                  <input
+                    type="range"
+                    name="io"
+                    id="io"
+                    min="1"
+                    max="10"
+                    step="1"
+                    value="5"
+                  />
+                </div>
 
-      <section>
-        <h2>Status</h2>
-        <form id="status-form">
-          <input
-            type="text"
-            name="namespace"
-            placeholder="Namespace"
-            required
-          />
-          <button type="submit">🔍 Verificar</button>
-          <pre id="status-output"></pre>
-        </form>
-      </section>
+                <div class="hstack gap-8">
+                  <button type="submit" class="btn">Criar ambiente</button>
+                </div>
+              </form>
+            </div>
 
-      <section>
-        <h2>Output</h2>
-        <form id="output-form">
-          <input
-            type="text"
-            name="namespace"
-            placeholder="Namespace"
-            required
-          />
-          <button type="submit">📄 Ver Output</button>
-          <pre id="output-log"></pre>
-        </form>
-      </section>
+            <!-- Executar -->
+            <div class="card">
+              <div class="card-header">
+                <h2>▶️ Executar Programa</h2>
+              </div>
+              <form id="execute-form" class="card-body vstack gap-12">
+                <div class="field-row">
+                  <label>Namespace</label>
+                  <input
+                    type="text"
+                    name="namespace"
+                    placeholder="ex: build-123"
+                    required
+                  />
+                </div>
+                <button type="submit" class="btn btn-primary">Executar</button>
+              </form>
+            </div>
 
-      <section>
-        <h2>Encerrar Ambiente</h2>
-        <form id="terminate-form">
-          <input
-            type="text"
-            name="namespace"
-            placeholder="Namespace"
-            required
-          />
-          <button type="submit">🛑 Encerrar</button>
-        </form>
-      </section>
+            <!-- Status -->
+            <div class="card">
+              <div class="card-header">
+                <h2>🔎 Status</h2>
+              </div>
+              <form id="status-form" class="card-body vstack gap-12">
+                <div class="field-row">
+                  <label>Namespace</label>
+                  <div class="hstack gap-8">
+                    <input
+                      type="text"
+                      name="namespace"
+                      placeholder="ex: build-123"
+                      required
+                    />
+                    <button class="btn btn-secondary" type="submit">
+                      Verificar
+                    </button>
+                  </div>
+                </div>
+
+                <div class="stats-grid" id="status-cards" hidden>
+                  <div class="stat">
+                    <div class="stat-title">Estado</div>
+                    <div class="stat-value" id="st-state">—</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-title">CPU (req)</div>
+                    <div class="stat-value" id="st-cpu">—</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-title">Mem (req)</div>
+                    <div class="stat-value" id="st-mem">—</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-title">Unit</div>
+                    <div class="stat-value mono" id="st-unit">—</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-title">PID</div>
+                    <div class="stat-value mono" id="st-pid">—</div>
+                  </div>
+                </div>
+
+                <pre id="status-output" class="pre"></pre>
+              </form>
+            </div>
+
+            <!-- Output -->
+            <div class="card">
+              <div class="card-header">
+                <h2>📄 Output</h2>
+              </div>
+              <form id="output-form" class="card-body vstack gap-12">
+                <div class="field-row">
+                  <label>Namespace</label>
+                  <div class="hstack gap-8">
+                    <input
+                      type="text"
+                      name="namespace"
+                      placeholder="ex: build-123"
+                      required
+                    />
+                    <button class="btn btn-secondary" type="submit">
+                      Ver output
+                    </button>
+                  </div>
+                </div>
+
+                <div class="toolbar hstack gap-8">
+                  <button type="button" id="copy-output" class="btn btn-ghost">
+                    Copiar
+                  </button>
+                  <a id="download-output" class="btn btn-ghost" download
+                    >Baixar .log</a
+                  >
+                </div>
+
+                <pre
+                  id="output-log"
+                  class="pre pre-large"
+                  aria-live="polite"
+                ></pre>
+              </form>
+            </div>
+
+            <!-- Encerrar -->
+            <div class="card danger">
+              <div class="card-header">
+                <h2>🛑 Encerrar Ambiente</h2>
+              </div>
+              <form id="terminate-form" class="card-body vstack gap-12">
+                <div class="field-row">
+                  <label>Namespace</label>
+                  <input
+                    type="text"
+                    name="namespace"
+                    placeholder="ex: build-123"
+                    required
+                  />
+                </div>
+                <button type="submit" class="btn btn-danger">
+                  Encerrar e remover
+                </button>
+              </form>
+            </div>
+          </section>
+        </main>
+      </div>
     </div>
+
+    <!-- Toasts -->
+    <div id="toasts"></div>
 
     <script src="script.js"></script>
   </body>
