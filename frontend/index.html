@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Gerenciador de Ambientes</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>⚙️ Gerenciador de Ambientes</h1>
+
+      <section>
+        <h2>Criar Ambiente</h2>
+        <form id="create-form">
+          <input
+            type="text"
+            name="namespace"
+            placeholder="Namespace"
+            required
+          />
+
+          <label for="command">Código a executar:</label>
+          <textarea
+            name="command"
+            id="command"
+            rows="8"
+            placeholder="Digite seu script ou comando aqui..."
+            required
+          ></textarea>
+
+          <label for="cpu">CPU (núcleos): <span id="cpu-val">1.0</span></label>
+          <input
+            type="range"
+            name="cpu"
+            id="cpu"
+            min="0.1"
+            max="8"
+            step="0.1"
+            value="1.0"
+          />
+
+          <label for="memory"
+            >Memória (MB): <span id="memory-val">512</span></label
+          >
+          <input
+            type="range"
+            name="memory"
+            id="memory"
+            min="64"
+            max="16384"
+            step="64"
+            value="512"
+          />
+
+          <label for="io">IO (prioridade): <span id="io-val">5</span></label>
+          <input
+            type="range"
+            name="io"
+            id="io"
+            min="1"
+            max="10"
+            step="1"
+            value="5"
+          />
+
+          <button type="submit">🚀 Criar Ambiente</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>Executar Programa</h2>
+        <form id="execute-form">
+          <input
+            type="text"
+            name="namespace"
+            placeholder="Namespace"
+            required
+          />
+          <button type="submit">▶️ Executar</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>Status</h2>
+        <form id="status-form">
+          <input
+            type="text"
+            name="namespace"
+            placeholder="Namespace"
+            required
+          />
+          <button type="submit">🔍 Verificar</button>
+          <pre id="status-output"></pre>
+        </form>
+      </section>
+
+      <section>
+        <h2>Output</h2>
+        <form id="output-form">
+          <input
+            type="text"
+            name="namespace"
+            placeholder="Namespace"
+            required
+          />
+          <button type="submit">📄 Ver Output</button>
+          <pre id="output-log"></pre>
+        </form>
+      </section>
+
+      <section>
+        <h2>Encerrar Ambiente</h2>
+        <form id="terminate-form">
+          <input
+            type="text"
+            name="namespace"
+            placeholder="Namespace"
+            required
+          />
+          <button type="submit">🛑 Encerrar</button>
+        </form>
+      </section>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
