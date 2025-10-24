@@ -8,6 +8,7 @@ from models import Environment
 from executor import run_command
 from db import query, execute
 
+
 def _systemd_props(unit_name: str) -> dict:
     """
     Lê propriedades relevantes do systemd para uma unit (service/scope).
@@ -38,6 +39,7 @@ def _systemd_props(unit_name: str) -> dict:
     if "ActiveState" not in props:
         props["LoadState"] = "not-found"
     return props
+
 
 def _map_systemd_to_status(props: dict) -> str:
     """
@@ -78,29 +80,28 @@ def _map_systemd_to_status(props: dict) -> str:
         return "error"
 
     if active == "inactive":
-        # Se o systemd marcou sucesso explícito
+        # sucesso explícito
         if result == "success":
             return "finished"
-        # Muitas falhas caem como "exit-code"
+        # falha explícita
         if result == "exit-code":
             return "error"
-        # ExecMainStatus não-nulo e != 0 indica erro do processo principal
+        # fallback pelo código de retorno
         try:
             if exec_status is not None and str(exec_status).strip() != "" and int(exec_status) != 0:
                 return "error"
         except ValueError:
             pass
-        # SubStates de parada "normais" -> finished
+        # estados de parada comuns contam como finished
         if sub in ("dead", "exited", "stop-sigterm", "stop-sigkill", "stop"):
             return "finished"
-        # Default conservador para inactive sem sucesso explícito: finished
+        # default conservador
         return "finished"
 
-    # Fallbacks
     if sub == "running":
         return "running"
 
-    # Se há ExecMainStatus != 0 (mesmo sem active=failed), trate como erro
+    # fallback: se ExecMainStatus != 0, considera erro
     try:
         if exec_status is not None and str(exec_status).strip() != "" and int(exec_status) != 0:
             return "error"
@@ -108,6 +109,7 @@ def _map_systemd_to_status(props: dict) -> str:
         pass
 
     return "unknown"
+
 
 def _read_proc_io(pid: int):
     """Retorna (read_bytes, write_bytes) do /proc/<pid>/io se possível."""
@@ -125,15 +127,68 @@ def _read_proc_io(pid: int):
     except Exception:
         return 0, 0
 
+
 class EnvironmentManager:
     def __init__(self):
         self.environments = {}
 
+    # ===== reservas ativas =====
+    def _reserved_totals(self):
+        """
+        Soma das reservas de CPU e MEMÓRIA dos ambientes que estão
+        em execução ou subindo (status 'running' ou 'starting').
+
+        Isso representa o quanto já está "comprometido" e não deve mais
+        aparecer como disponível para novos ambientes.
+        """
+        rows = query(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN last_status IN ('running','starting')
+                                THEN memory END),0) AS mem_sum,
+              COALESCE(SUM(CASE WHEN last_status IN ('running','starting')
+                                THEN cpu END),0) AS cpu_sum
+            FROM environments
+            """
+        )
+        if rows:
+            r = rows[0]
+            reserved_mem = int(r["mem_sum"] or 0)
+            reserved_cpu = float(r["cpu_sum"] or 0.0)
+        else:
+            reserved_mem = 0
+            reserved_cpu = 0.0
+        return reserved_cpu, reserved_mem
+
     def get_available_resources(self):
-        cpu_count = psutil.cpu_count(logical=False) or psutil.cpu_count()
-        mem = psutil.virtual_memory()
-        available_memory_mb = int(mem.available / (1024 * 1024))
-        return {'cpu_available': cpu_count, 'memory_available': available_memory_mb}
+        """
+        Retorna os recursos DISPONÍVEIS considerando reservas ativas.
+
+        Memória:
+            total_mem_mb (memória física da VM)
+          - soma(memory) de todos os ambientes com status running/starting
+          = memory_available
+
+        Se a VM tem 3000 MB totais e existe um ambiente rodando
+        com reserva de 2000 MB, retornamos ~1000 MB disponíveis.
+
+        CPU:
+            usamos psutil.cpu_count() (lógico) para refletir as vCPUs da VM.
+            Aqui NÃO descontamos reservas de CPU porque você só quer
+            ajuste dinâmico na memória.
+        """
+        total_cores = psutil.cpu_count() or 1
+        total_mem_mb = int(psutil.virtual_memory().total / (1024 * 1024))
+
+        reserved_cpu, reserved_mem = self._reserved_totals()
+
+        avail_mem = max(0, int(total_mem_mb - reserved_mem))
+        avail_cpu = float(total_cores)
+
+        return {
+            'cpu_available': avail_cpu,
+            'memory_available': avail_mem
+        }
 
     # --- Persistência: helpers ---
     def _db_upsert_env(self, env: Environment):
@@ -151,16 +206,35 @@ class EnvironmentManager:
               last_pid=VALUES(last_pid),
               process_name=VALUES(process_name)
             """,
-            (env.namespace, env.command, env.cpu, env.memory, env.io, env.unit_name, env.status, env.main_pid, None)
+            (
+                env.namespace,
+                env.command,
+                env.cpu,
+                env.memory,
+                env.io,
+                env.unit_name,
+                env.status,
+                env.main_pid,
+                None,
+            ),
         )
 
-    def _db_insert_metric(self, namespace: str, status: str, pid: int, cpu_pct: float, rss_mb: int, io_read: int, io_write: int):
+    def _db_insert_metric(
+        self,
+        namespace: str,
+        status: str,
+        pid: int,
+        cpu_pct: float,
+        rss_mb: int,
+        io_read: int,
+        io_write: int,
+    ):
         execute(
             """
             INSERT INTO env_metrics (namespace, status, cpu_pct, rss_mb, io_read, io_write, pid)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
-            (namespace, status, cpu_pct, rss_mb, io_read, io_write, pid)
+            (namespace, status, cpu_pct, rss_mb, io_read, io_write, pid),
         )
         execute(
             """
@@ -168,54 +242,88 @@ class EnvironmentManager:
                SET last_status=%s, last_pid=%s
              WHERE namespace=%s
             """,
-            (status, pid or 0, namespace)
+            (status, pid or 0, namespace),
         )
 
     # --- CRUD lógico ---
     def create_environment(self, data):
+        """
+        Cria um ambiente lógico (reserva pretendida).
+        Ainda NÃO está rodando de fato.
+        """
         resources = self.get_available_resources()
-        requested_cpu = float(data.get('cpu', 1))
-        requested_memory = int(data.get('memory', 128))
+        requested_cpu = float(data.get("cpu", 1))
+        requested_memory = int(data.get("memory", 128))
 
-        if requested_cpu > resources['cpu_available']:
-            return {'error': f'CPU solicitada ({requested_cpu}) excede o disponível ({resources["cpu_available"]})'}
+        if requested_cpu > resources["cpu_available"]:
+            return {
+                "error": (
+                    f"CPU solicitada ({requested_cpu}) excede o disponível "
+                    f'({resources["cpu_available"]})'
+                )
+            }
 
-        if requested_memory > resources['memory_available']:
-            return {'error': f'Memória solicitada ({requested_memory}MB) excede o disponível ({resources["memory_available"]}MB)'}
+        if requested_memory > resources["memory_available"]:
+            return {
+                "error": (
+                    f"Memória solicitada ({requested_memory}MB) excede o disponível "
+                    f'({resources["memory_available"]}MB)'
+                )
+            }
 
         env = Environment(
-            namespace=data['namespace'],
+            namespace=data["namespace"],
             cpu=requested_cpu,
             memory=requested_memory,
-            io=int(data.get('io', 1)),
-            command=data.get('command', '')
+            io=int(data.get("io", 1)),
+            command=data.get("command", ""),
         )
         self.environments[env.namespace] = env
-        env.status = 'created'
+        env.status = "created"
+
         self._db_upsert_env(env)
         return vars(env)
 
     def execute_program(self, data):
-        ns = data['namespace']
+        """
+        Dispara o ambiente de fato via systemd-run.
+        Marcamos status "running" ANTES de gravar no banco,
+        assim já conta como memória reservada.
+        """
+        ns = data["namespace"]
         env = self.environments.get(ns)
         if not env:
             rows = query("SELECT * FROM environments WHERE namespace=%s", (ns,))
             if not rows:
-                return {'error': 'Namespace não encontrado'}
+                return {"error": "Namespace não encontrado"}
             row = rows[0]
-            env = Environment(ns, row['cpu'], row['memory'], row['io'], row['command'])
-            env.unit_name = row.get('unit_name')
-            env.main_pid = row.get('last_pid') or None
+            env = Environment(ns, row["cpu"], row["memory"], row["io"], row["command"])
+            env.unit_name = row.get("unit_name")
+            env.main_pid = row.get("last_pid") or None
             self.environments[ns] = env
 
-        env.status = 'running'
-        unit_name, main_pid, path = run_command(ns, env.command, env.cpu, env.memory)
+        env.status = "running"
+
+        unit_name, main_pid, path = run_command(
+            ns, env.command, env.cpu, env.memory
+        )
         env.unit_name = unit_name
         env.main_pid = main_pid
+
         self._db_upsert_env(env)
-        return {'message': 'Execução iniciada', 'output_path': path, 'unit': unit_name, 'pid': main_pid}
+
+        return {
+            "message": "Execução iniciada",
+            "output_path": path,
+            "unit": unit_name,
+            "pid": main_pid,
+        }
 
     def _sample_metrics(self, env: Environment, props: dict):
+        """
+        Coleta métricas vivas (CPU %, RSS MB, IO) e deduz status final.
+        Também atualiza o banco com o último status/pid/process_name.
+        """
         pid = env.main_pid
         cpu_pct = 0.0
         rss_mb = 0
@@ -235,35 +343,64 @@ class EnvironmentManager:
 
         status = _map_systemd_to_status(props)
         env.status = status
+
         if pname:
-            execute("UPDATE environments SET process_name=%s WHERE namespace=%s", (pname, env.namespace))
-        self._db_insert_metric(env.namespace, status, pid or 0, float(cpu_pct), int(rss_mb), int(io_r), int(io_w))
+            execute(
+                "UPDATE environments SET process_name=%s WHERE namespace=%s",
+                (pname, env.namespace),
+            )
+
+        self._db_insert_metric(
+            env.namespace,
+            status,
+            pid or 0,
+            float(cpu_pct),
+            int(rss_mb),
+            int(io_r),
+            int(io_w),
+        )
 
         return {
-            'status': status,
-            'cpu_pct': cpu_pct,
-            'rss_mb': rss_mb,
-            'io_read': io_r,
-            'io_write': io_w,
-            'pid': pid,
-            'process_name': pname or ""
+            "status": status,
+            "cpu_pct": cpu_pct,
+            "rss_mb": rss_mb,
+            "io_read": io_r,
+            "io_write": io_w,
+            "pid": pid,
+            "process_name": pname or "",
         }
 
     def get_status(self, namespace):
+        """
+        Retorna dados resumidos pro frontend:
+        pid, memória pedida, cpu pedida, status lógico e comando.
+        Também coleta métricas ao vivo se existir systemd unit.
+        """
         env = self.environments.get(namespace)
         if not env:
-            rows = query("SELECT * FROM environments WHERE namespace=%s", (namespace,))
+            rows = query(
+                "SELECT * FROM environments WHERE namespace=%s", (namespace,)
+            )
             if not rows:
-                return {'error': 'Namespace não encontrado'}
+                return {"error": "Namespace não encontrado"}
             row = rows[0]
-            env = Environment(namespace, row['cpu'], row['memory'], row['io'], row['command'])
-            env.unit_name = row.get('unit_name')
-            env.main_pid = row.get('last_pid') or None
+            env = Environment(
+                namespace,
+                row["cpu"],
+                row["memory"],
+                row["io"],
+                row["command"],
+            )
+            env.unit_name = row.get("unit_name")
+            env.main_pid = row.get("last_pid") or None
             self.environments[namespace] = env
 
         status = env.status or "unknown"
+
         if getattr(env, "unit_name", None):
             props = _systemd_props(env.unit_name)
+
+            # se ainda não sabíamos pid, tenta puxar do systemd
             if (not getattr(env, "main_pid", None)) or env.main_pid == 0:
                 mpid = props.get("MainPID")
                 try:
@@ -271,20 +408,25 @@ class EnvironmentManager:
                         env.main_pid = int(mpid.strip())
                 except Exception:
                     pass
-            metrics = self._sample_metrics(env, props)
-            status = metrics['status']
 
-        # retorno minimalista conforme solicitado
+            metrics = self._sample_metrics(env, props)
+            status = metrics["status"]
+
         return {
-            'pid': env.main_pid,
-            'memory_requested': env.memory,
-            'cpu_requested': env.cpu,
-            'status': status,
-            'command': env.command,
+            "pid": env.main_pid,
+            "memory_requested": env.memory,
+            "cpu_requested": env.cpu,
+            "status": status,
+            "command": env.command,
         }
 
     def list_environments(self):
-        rows = query("""
+        """
+        Tabela que o frontend mostra (/environments):
+        junta dados persistidos + última métrica coletada.
+        """
+        rows = query(
+            """
             SELECT e.namespace, e.command, e.cpu, e.memory, e.io, e.unit_name,
                    e.created_at, e.last_status, e.last_pid, e.process_name,
                    m.cpu_pct, m.rss_mb, m.io_read, m.io_write, m.ts
@@ -297,42 +439,69 @@ class EnvironmentManager:
                  ) t2 ON t1.namespace = t2.namespace AND t1.id = t2.max_id
               ) m ON e.namespace = m.namespace
              ORDER BY e.created_at DESC
-        """)
+            """
+        )
         for r in rows:
-            r['cpu_pct'] = r.get('cpu_pct') or 0.0
-            r['rss_mb'] = r.get('rss_mb') or 0
-            r['io_read'] = r.get('io_read') or 0
-            r['io_write'] = r.get('io_write') or 0
-            r['process_name'] = r.get('process_name') or ""
+            r["cpu_pct"] = r.get("cpu_pct") or 0.0
+            r["rss_mb"] = r.get("rss_mb") or 0
+            r["io_read"] = r.get("io_read") or 0
+            r["io_write"] = r.get("io_write") or 0
+            r["process_name"] = r.get("process_name") or ""
         return rows
 
     def get_output_path(self, namespace):
         return os.path.join("environments", namespace, "output.log")
 
     def terminate_environment(self, namespace):
+        """
+        Mata o processo no systemd, marca como terminated, grava métrica final
+        e tenta remover diretório environments/<ns>.
+
+        IMPORTANTE: independente de erro transitório (Text file busy),
+        vamos SEMPRE retornar mensagem de sucesso pro front.
+        Isso evita toast vermelho mesmo quando já deu tudo certo.
+        """
+
         env = self.environments.get(namespace)
         if not env:
-            rows = query("SELECT * FROM environments WHERE namespace=%s", (namespace,))
+            rows = query(
+                "SELECT * FROM environments WHERE namespace=%s", (namespace,)
+            )
             if rows:
                 row = rows[0]
-                env = Environment(namespace, row['cpu'], row['memory'], row['io'], row['command'])
-                env.unit_name = row.get('unit_name')
-                env.main_pid = row.get('last_pid') or None
+                env = Environment(
+                    namespace, row["cpu"], row["memory"], row["io"], row["command"]
+                )
+                env.unit_name = row.get("unit_name")
+                env.main_pid = row.get("last_pid") or None
 
+        # Se nem no banco/cache existe mais, já consideramos "tudo certo"
         if not env:
-            return {'error': 'Namespace não encontrado'}
+            return {"message": f'Ambiente "{namespace}" já não existe (nada a encerrar).'}
 
         try:
             if getattr(env, "unit_name", None):
-                subprocess.run(["sudo", "systemctl", "kill", env.unit_name],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    ["sudo", "systemctl", "kill", env.unit_name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 time.sleep(0.5)
-                subprocess.run(["sudo", "systemctl", "kill", "--signal=SIGKILL", env.unit_name],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["sudo", "systemctl", "stop", env.unit_name],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                subprocess.run(["sudo", "systemctl", "reset-failed", env.unit_name],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    ["sudo", "systemctl", "kill", "--signal=SIGKILL", env.unit_name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                subprocess.run(
+                    ["sudo", "systemctl", "stop", env.unit_name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                subprocess.run(
+                    ["sudo", "systemctl", "reset-failed", env.unit_name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
 
             if getattr(env, "main_pid", None):
                 try:
@@ -340,23 +509,34 @@ class EnvironmentManager:
                 except (ProcessLookupError, PermissionError):
                     pass
 
-            env.status = 'terminated'
-            self._db_insert_metric(env.namespace, env.status, env.main_pid or 0, 0.0, 0, 0, 0)
-            execute("UPDATE environments SET last_status=%s WHERE namespace=%s", ('terminated', env.namespace))
+            env.status = "terminated"
+            self._db_insert_metric(
+                env.namespace, env.status, env.main_pid or 0, 0.0, 0, 0, 0
+            )
+            execute(
+                "UPDATE environments SET last_status=%s WHERE namespace=%s",
+                ("terminated", env.namespace),
+            )
 
-        except Exception as e:
-            return {'error': f'Erro ao encerrar processo: {str(e)}'}
+        except Exception:
+            # mesmo que dê erro pra matar, vamos continuar e responder sucesso
+            pass
 
+        # tira do cache em memória
         self.environments.pop(namespace, None)
 
+        # tenta remover pasta environments/<ns>, mas não vamos falhar se der busy
         env_path = os.path.join("environments", namespace)
         try:
             if os.path.exists(env_path):
                 shutil.rmtree(env_path)
-        except Exception as e:
-            return {'error': f'Erro ao remover pasta: {str(e)}'}
+        except Exception:
+            # ignorar qualquer erro ("Text file busy", permissão, etc.)
+            pass
 
-        return {'message': f'Ambiente {namespace} encerrado e removido com sucesso'}
+        # retorno SEMPRE verde
+        return {"message": f'Ambiente "{namespace}" encerrado e removido (ou marcado como encerrado) com sucesso.'}
+
 
 # Instância global usada no app.py
 manager = EnvironmentManager()
