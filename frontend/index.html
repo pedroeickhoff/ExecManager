@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <title>Exec Environments • Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- SF Pro (fallbacks) -->
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <style>
       @font-face {
@@ -17,7 +16,6 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <!-- App Window (macOS chrome) -->
     <div class="mac-window">
       <div class="mac-titlebar">
         <div class="mac-traffic">
@@ -34,7 +32,6 @@
       </div>
 
       <div class="app-shell">
-        <!-- Sidebar -->
         <aside class="sidebar">
           <div class="panel">
             <h3 class="panel-title">Recursos disponíveis</h3>
@@ -74,16 +71,14 @@
                 Carregar script demo
               </button>
               <button id="clear-output" class="btn btn-ghost">
-                Limpar output
+                Limpar outputs
               </button>
             </div>
           </div>
         </aside>
 
-        <!-- Main content -->
         <main class="main">
           <section class="grid">
-            <!-- Criar Ambiente -->
             <div class="card">
               <div class="card-header">
                 <h2>🧩 Criar Ambiente</h2>
@@ -165,7 +160,6 @@
               </form>
             </div>
 
-            <!-- Executar -->
             <div class="card">
               <div class="card-header">
                 <h2>▶️ Executar Programa</h2>
@@ -184,7 +178,6 @@
               </form>
             </div>
 
-            <!-- Status -->
             <div class="card">
               <div class="card-header">
                 <h2>🔎 Status</h2>
@@ -232,7 +225,6 @@
               </form>
             </div>
 
-            <!-- Output -->
             <div class="card">
               <div class="card-header">
                 <h2>📄 Output</h2>
@@ -270,7 +262,6 @@
               </form>
             </div>
 
-            <!-- Encerrar -->
             <div class="card danger">
               <div class="card-header">
                 <h2>🛑 Encerrar Ambiente</h2>
@@ -290,12 +281,46 @@
                 </button>
               </form>
             </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2>📋 Ambientes (persistidos)</h2>
+                <div class="hstack gap-8">
+                  <button id="refresh-envs" class="btn btn-secondary">
+                    Atualizar
+                  </button>
+                  <label class="microtext"
+                    ><input type="checkbox" id="auto-refresh" /> auto 5s</label
+                  >
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="table-wrap">
+                  <table class="table" id="env-table">
+                    <thead>
+                      <tr>
+                        <th>Namespace</th>
+                        <th>Status</th>
+                        <th>PID</th>
+                        <th>CPU (req)</th>
+                        <th>Mem (req MB)</th>
+                        <th>Unit</th>
+                        <th>Criado em</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+                <div class="microtext">
+                  Fonte: /environments (DB + última métrica).
+                </div>
+              </div>
+            </div>
           </section>
         </main>
       </div>
     </div>
 
-    <!-- Toasts -->
     <div id="toasts"></div>
 
     <script src="script.js"></script>

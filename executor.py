@@ -3,34 +3,32 @@ import os
 import time
 
 def run_command(namespace, command, cpu=1.0, memory=512):
-    """
-    Inicia o comando em um .service transitório (systemd-run) com limites reais.
-    Retorna (unit_name, main_pid, output_path).
-    """
+  
     output_dir = os.path.join("environments", namespace)
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, "output.log")
+    output_path = os.path.abspath(os.path.join(output_dir, "output.log"))
 
     unit_name = f"env-{namespace}.service"
+
+    quota_pct = float(cpu) * 100.0
+    quota_str = f"{quota_pct:.1f}%"  
 
     cmd = [
         "sudo", "systemd-run", "--quiet",
         "--unit", unit_name,
-        "--collect",                      # limpa a unit ao terminar
         "-p", f"MemoryMax={int(memory)}M",
-        "-p", f"CPUQuota={int(float(cpu) * 100)}%",
-        "-p", "KillMode=mixed",           # mata processo e filhos
+        "-p", f"CPUQuota={quota_str}",
+        "-p", "KillMode=mixed",
         "-p", "TimeoutStopSec=5s",
-        "/bin/bash", "-lc", f"exec {command}"  # 'exec' torna o processo alvo o MainPID
+        "-p", f"StandardOutput=append:{output_path}",
+        "-p", f"StandardError=append:{output_path}",
+        "/bin/bash", "-lc", f"exec {command}"
     ]
 
-    # Dispara e grava os logs do systemd-run no output.log
-    with open(output_path, "w") as out_file:
-        subprocess.Popen(cmd, stdout=out_file, stderr=out_file)
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    # MainPID pode demorar um pouco; faz polling curto
     main_pid = None
-    for _ in range(15):  # ~1.5s
+    for _ in range(20):  
         try:
             mpid = subprocess.check_output(
                 ["systemctl", "show", unit_name, "-p", "MainPID", "--value"],

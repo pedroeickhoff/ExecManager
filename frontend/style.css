@@ -282,7 +282,7 @@ input[type="range"] {
   border-radius: 12px;
   cursor: pointer;
   font-weight: 600;
-  box-shadow: 0 6px 16px rgba(26, 95, 209, 0.35);
+  box-shadow: var(--shadow);
   transition: transform 0.05s ease, filter 0.15s ease;
 }
 .btn:hover {
@@ -388,4 +388,43 @@ input[type="range"] {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* ===== tabela & pills (novo) ===== */
+.table-wrap {
+  overflow: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th,
+.table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+.pill.ok {
+  color: #8df0b5;
+  border-color: rgba(46, 204, 113, 0.35);
+}
+.pill.err {
+  color: #ff8e8e;
+  border-color: rgba(255, 95, 87, 0.35);
+}
+.pill.warn {
+  color: #ffe08a;
+  border-color: rgba(255, 193, 7, 0.35);
+}
+.pill.muted {
+  color: var(--muted);
 }
