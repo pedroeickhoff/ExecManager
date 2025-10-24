@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS env_metrics (
 SQL
 
     # Permitir que o usuário 'vagrant' chame systemctl/systemd-run sem senha
-    echo "vagrant ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/systemd-run" >/etc/sudoers.d/execenv
+    echo "vagrant ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/systemd-run, /bin/bash, /usr/bin/mkdir" >/etc/sudoers.d/execenv
     chmod 440 /etc/sudoers.d/execenv
 
     # --- Frontend (Apache) ---
