@@ -4,7 +4,7 @@ Este guia explica como subir a máquina virtual com Vagrant, configurar o fronte
 
 ---
 
-## 🧰 1. Subir a VM
+## 1. Subir a VM
 
 No seu computador (Windows), dentro da pasta do projeto:
 
@@ -17,7 +17,7 @@ vagrant up
 
 ---
 
-## 💻 2. Entrar na VM
+## 2. Entrar na VM
 
 Depois que a VM estiver em execução:
 
@@ -30,7 +30,7 @@ vagrant ssh
 
 ---
 
-## 🌐 3. Publicar o frontend no Apache
+## 3. Publicar o frontend no Apache
 
 Dentro da VM (no terminal aberto após `vagrant ssh`):
 
@@ -45,7 +45,7 @@ sudo systemctl restart apache2
 
 ---
 
-## ⚙️ 4. Rodar a API Flask manualmente
+## 4. Rodar a API Flask manualmente
 
 Ainda dentro da VM:
 
@@ -58,7 +58,7 @@ sudo python3 app.py
 
 ---
 
-## 🌍 5. Acessar o Dashboard
+## 5. Acessar o Dashboard
 
 No navegador do seu computador (host), abra:
 
@@ -73,7 +73,7 @@ http://192.168.56.10/exec_env_frontend/index.html
 
 ---
 
-## 🚀 6. Fluxo de uso no Dashboard
+## 6. Fluxo de uso no Dashboard
 
 1. **Criar Ambiente** — defina `namespace`, CPU (aceita decimais, ex.: 0.3), memória (MB) e o comando/script.
 2. **Executar** — inicie a execução do ambiente criado.
@@ -83,7 +83,7 @@ http://192.168.56.10/exec_env_frontend/index.html
 
 ---
 
-## 🔌 7. Endpoints principais (API Flask)
+## 7. Endpoints principais (API Flask)
 
 - **POST /create** → cria um ambiente  
   Exemplo:
@@ -102,7 +102,7 @@ http://192.168.56.10/exec_env_frontend/index.html
 
 ---
 
-## 🧠 8. Observações importantes
+## 8. Observações importantes
 
 - Erros de execução (ex.: comando inexistente) aparecem como `status: "error"`.
 - Logs ficam em `environments/<namespace>/output.log`.
@@ -112,7 +112,7 @@ http://192.168.56.10/exec_env_frontend/index.html
 
 ---
 
-## 📴 9. Encerrar o ambiente
+## 9. Encerrar o ambiente
 
 Para parar tudo:
 
